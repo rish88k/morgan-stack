@@ -1,0 +1,13 @@
+.env
+
+/dashboard/.snowflake
+
+/airflow-md
+
+/docker/postgres
+
+/secrets
+
+*.log
+
+profiles.yml

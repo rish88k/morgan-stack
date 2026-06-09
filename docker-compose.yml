@@ -1,0 +1,189 @@
+
+services:
+
+  kafka:
+    image: quay.io/debezium/kafka:latest
+    ports:
+      - "29092:29092"
+      - "9092:9092"
+    depends_on:
+      - postgres-rdbms
+    environment:
+      - KAFKA_CLUSTER_ID= 56e37764-2eb8-4968-b9ce-6a2e6974be83
+      - BROKER_ID=1
+      - KAFKA_LISTENERS=INTERNAL://:9092, EXTERNAL://:29092, CONTROLLER://:9093
+      - KAFKA_ADVERTISED_LISTENERS= INTERNAL://kafka:9092, EXTERNAL://localhost:29092
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP= INTERNAL:PLAINTEXT, EXTERNAL:PLAINTEXT, CONTROLLER:PLAINTEXT
+      - KAFKA_INTER_BROKER_LISTENER_NAME= INTERNAL
+      - KAFKA_CONTROLLER_LISTENER_NAMES= CONTROLLER
+      - KAFKA_CONTROLLER_QUOROM_VOTERS= 1@kafka:9093
+      - KAFKA_PROCESS_ROLES=broker, controller
+      - KAFKA_NODE_ID=1
+    networks:
+      - dev-net
+
+  kafka-consumer:
+    build: 
+      context: consumer/
+      dockerfile: docker-consumer.dockerfile
+    container_name: kafka-to-minio-consumer
+    depends_on: 
+      - kafka
+    environment:
+        - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+        - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+        - KAFKA_BOOTSTRAP_SERVERS=kafka:9092  
+    networks:
+      - dev-net
+
+
+  connect:
+    image: quay.io/debezium/connect:latest
+    ports:
+      - "8083:8083"
+    depends_on:
+      - kafka
+    environment:
+      - BOOTSTRAP_SERVERS=kafka:9092
+      - GROUP_ID=1
+      - CONFIG_STORAGE_TOPIC=my_connect_configs
+      - OFFSET_STORAGE_TOPIC=my_connect_offsets
+      - STATUS_STORAGE_TOPIC=my_connect_statuses
+    networks:
+      - dev-net
+
+
+  postgres-rdbms:
+    image: postgres:15
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5434:5432"
+    volumes:
+      - ./docker/postgres/data:/var/lib/postgresql/data
+    networks:
+      - dev-net
+    command: >
+      postgres -c wal_level=logical
+              -c max_wal_senders=4
+              -c max_replication_slots=4
+  
+
+  airflow-webserver:
+    build:
+      context: .
+      dockerfile: docker-airflow.dockerfile
+    container_name: airflow-webserver
+    restart: always
+    depends_on:
+      - airflow-postgres
+    environment:
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@airflow-postgres:5432/${AIRFLOW_DB_NAME}
+      - AIRFLOW__CORE__TEST_CONNECTION=Enabled
+    volumes:
+      - ./docker/dags:/opt/airflow/dags
+      - ./docker/logs:/opt/airflow/logs
+      - ./docker/plugins:/opt/airflow/plugins
+      - ./secrets:/opt/airflow/secrets
+    ports:
+      - "8080:8080"
+    command: webserver
+
+  airflow-scheduler:
+    build:
+      context: .
+      dockerfile: docker-airflow.dockerfile
+    container_name: airflow-scheduler
+    restart: always
+    depends_on:
+      - airflow-postgres
+    environment:
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@airflow-postgres:5432/${AIRFLOW_DB_NAME}
+    volumes:
+      - ./docker/dags:/opt/airflow/dags
+      - ./docker/logs:/opt/airflow/logs
+      - ./docker/plugins:/opt/airflow/plugins
+      - ./secrets:/opt/airflow/secrets
+      - ./dbt/trans_snowf:/opt/airflow/dbt/trans_snowf
+    command: scheduler
+
+
+
+  airflow-postgres:
+    image: postgres:15
+    container_name: airflow-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${AIRFLOW_DB_USER}
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD}
+      POSTGRES_DB: ${AIRFLOW_DB_NAME}
+    volumes:
+      - ./airflow-md/data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"  
+
+  airflow-init:
+    build: 
+      context: .
+      dockerfile: docker-airflow.dockerfile
+    depends_on:
+      - airflow-postgres
+    entrypoint: ["/bin/bash", "/init_airflow_pg.sh"]
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@airflow-postgres:5432/${AIRFLOW_DB_NAME}
+      AIRFLOW_ADMIN_USERNAME: ${AIRFLOW_ADMIN_USERNAME}
+      AIRFLOW_ADMIN_FIRSTNAME: ${AIRFLOW_ADMIN_FIRSTNAME}
+      AIRFLOW_ADMIN_LASTNAME: ${AIRFLOW_ADMIN_LASTNAME}
+      AIRFLOW_ADMIN_EMAIL: ${AIRFLOW_ADMIN_EMAIL}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
+    volumes:
+      - ./init_airflow_pg.sh:/init_airflow_pg.sh
+    restart: "no"
+
+  
+  faker:
+    build: 
+      context: data-generator/
+      dockerfile: docker-faker.dockerfile
+    container_name: generator
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      - postgres-rdbms
+    networks:
+      - dev-net
+
+  banking-dashboard:
+      build:
+        context: ./dashboard
+        dockerfile: Dockerfile
+      container_name: banking-dashboard
+      restart: unless-stopped
+      ports:
+        - "6969:6969"
+      environment:
+        - PORT=6969
+      volumes:
+        - ./dashboard/.snowflake:/root/.snowflake
+      healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost:6969/health"]
+        interval: 15s
+        timeout: 5s
+        retries: 3
+
+
+volumes:
+  airflow_postgres_data_2:
+  postgres_data:
+networks:
+  default:
+    name: banking-mds-net
+  dev-net:
+    driver: bridge
+  

@@ -1,0 +1,35 @@
+
+version: 2
+
+sources:
+  - name: raw_data
+    database: BANKING_DB
+    schema: PUBLIC_RAW
+    tables: 
+      - name: RAW_TRANSACTIONS
+      - name: RAW_ACCOUNTS
+      - name: RAW_CUSTOMERS
+
+
+
+
+
+
+models:
+  - name: my_first_dbt_model
+    description: "A starter dbt model"
+    columns:
+      - name: id
+        description: "The primary key for this table"
+        data_tests:
+          - unique
+          - not_null
+
+  - name: my_second_dbt_model
+    description: "A starter dbt model"
+    columns:
+      - name: id
+        description: "The primary key for this table"
+        data_tests:
+          - unique
+          - not_null

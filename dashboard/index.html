@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Banking DB · Analytics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&family=Bebas+Neue&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg:       #08090b;
+  --s1:       #0e1117;
+  --s2:       #141820;
+  --s3:       #1c2230;
+  --border:   rgba(255,255,255,0.07);
+  --border2:  rgba(255,255,255,0.12);
+  --cyan:     #00e5ff;
+  --green:    #39ff8f;
+  --amber:    #ffc233;
+  --red:      #ff4757;
+  --purple:   #b06eff;
+  --pink:     #ff6eb4;
+  --text:     #dde4ef;
+  --muted:    #5a6478;
+  --muted2:   #3a4255;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 14px;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Scanline texture */
+body::after {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 999;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.03) 2px,
+    rgba(0,0,0,0.03) 4px
+  );
+}
+
+/* ── HEADER ──────────────────────────────────────── */
+header {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(8,9,11,0.95);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+  padding: 0 32px;
+  height: 56px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+
+.brand {
+  display: flex; align-items: baseline; gap: 14px;
+}
+.brand-name {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 22px; letter-spacing: 0.12em;
+  color: var(--cyan);
+}
+.brand-sub {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px; color: var(--muted);
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+
+.header-right {
+  display: flex; align-items: center; gap: 20px;
+}
+.status-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+#last-refresh {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px; color: var(--muted);
+}
+.source-badge {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px; padding: 3px 8px;
+  border-radius: 3px; letter-spacing: 0.05em;
+  background: rgba(0,229,255,0.08);
+  border: 1px solid rgba(0,229,255,0.2);
+  color: var(--cyan);
+}
+
+/* ── LAYOUT ──────────────────────────────────────── */
+main {
+  padding: 28px 32px 48px;
+  max-width: 1600px; margin: 0 auto;
+}
+
+section-label {
+  display: block;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px; letter-spacing: 0.15em;
+  text-transform: uppercase; color: var(--muted);
+  margin: 32px 0 14px;
+  padding-left: 2px;
+  border-left: 2px solid var(--cyan);
+  padding-left: 10px;
+}
+
+/* ── KPI STRIP ───────────────────────────────────── */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.kpi {
+  background: var(--s1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 18px 20px 16px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+.kpi:hover { border-color: var(--border2); }
+.kpi::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 2px;
+}
+.kpi.c-cyan::before   { background: var(--cyan); }
+.kpi.c-green::before  { background: var(--green); }
+.kpi.c-amber::before  { background: var(--amber); }
+.kpi.c-red::before    { background: var(--red); }
+.kpi.c-purple::before { background: var(--purple); }
+.kpi.c-pink::before   { background: var(--pink); }
+
+.kpi-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--muted);
+  margin-bottom: 10px;
+}
+.kpi-value {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 36px; line-height: 1;
+  letter-spacing: 0.03em;
+}
+.kpi.c-cyan   .kpi-value { color: var(--cyan); }
+.kpi.c-green  .kpi-value { color: var(--green); }
+.kpi.c-amber  .kpi-value { color: var(--amber); }
+.kpi.c-red    .kpi-value { color: var(--red); }
+.kpi.c-purple .kpi-value { color: var(--purple); }
+.kpi.c-pink   .kpi-value { color: var(--pink); }
+
+.kpi-sub {
+  font-size: 11px; color: var(--muted);
+  margin-top: 6px;
+  font-family: 'IBM Plex Mono', monospace;
+}
+.kpi-sub .up   { color: var(--green); }
+.kpi-sub .down { color: var(--red); }
+
+/* ── CHART GRID ──────────────────────────────────── */
+.chart-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px; margin-bottom: 16px;
+}
+.chart-grid-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px; margin-bottom: 16px;
+}
+.chart-grid-full {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px; margin-bottom: 16px;
+}
+.span2 { grid-column: span 2; }
+
+@media (max-width: 1100px) {
+  .chart-grid-3 { grid-template-columns: 1fr 1fr; }
+  .chart-grid-2 { grid-template-columns: 1fr; }
+  .span2 { grid-column: span 1; }
+}
+@media (max-width: 700px) {
+  .chart-grid-3 { grid-template-columns: 1fr; }
+  main { padding: 16px; }
+}
+
+/* ── CARD ────────────────────────────────────────── */
+.card {
+  background: var(--s1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px 24px;
+  position: relative;
+}
+
+.card-title {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--muted);
+  margin-bottom: 4px;
+}
+.card-subtitle {
+  font-size: 12px; color: var(--muted);
+  margin-bottom: 18px;
+}
+
+.chart-wrap {
+  position: relative;
+  width: 100%;
+}
+
+/* ── COUNTRY TABLE ───────────────────────────────── */
+.country-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.country-table tr {
+  border-bottom: 1px solid var(--border);
+}
+.country-table tr:last-child { border-bottom: none; }
+.country-table td {
+  padding: 9px 0;
+  font-size: 13px;
+}
+.country-table td:last-child {
+  text-align: right;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--cyan);
+}
+.rank {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px; color: var(--muted2);
+  width: 24px; display: inline-block;
+}
+
+/* Bar progress rows */
+.bar-rows { display: flex; flex-direction: column; gap: 10px; }
+.bar-row-label {
+  display: flex; justify-content: space-between;
+  font-size: 12px; margin-bottom: 5px;
+}
+.bar-row-label span:first-child { color: var(--text); }
+.bar-row-label span:last-child  {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px; color: var(--muted);
+}
+.bar-track {
+  height: 4px; background: var(--s3); border-radius: 2px; overflow: hidden;
+}
+.bar-fill {
+  height: 100%; border-radius: 2px;
+  transition: width 0.8s cubic-bezier(0.4,0,0.2,1);
+}
+
+/* ── ACCOUNT WEALTH PANEL ────────────────────────── */
+.wealth-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 12px; margin-top: 4px;
+}
+.wealth-cell {
+  background: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px;
+  text-align: center;
+}
+.wealth-name {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--muted);
+  margin-bottom: 10px;
+}
+.wealth-count {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 30px; line-height: 1;
+  margin-bottom: 4px;
+}
+.wealth-pct {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px; color: var(--muted);
+}
+
+/* ── FOOTER ──────────────────────────────────────── */
+footer {
+  text-align: center;
+  padding: 20px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px; color: var(--muted2);
+  border-top: 1px solid var(--border);
+  letter-spacing: 0.08em;
+}
+
+/* ── LOADING SKELETON ────────────────────────────── */
+.skeleton {
+  background: linear-gradient(90deg, var(--s2) 25%, var(--s3) 50%, var(--s2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: 4px;
+  height: 20px;
+}
+@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="brand-name">BANKING_DB</span>
+    <span class="brand-sub">dbt analytics · live</span>
+  </div>
+  <div class="header-right">
+    <div class="status-dot"></div>
+    <span id="last-refresh">--:--:-- UTC</span>
+    <span class="source-badge" id="source-badge">DEMO</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- KPI STRIP -->
+  <section-label>Key metrics</section-label>
+  <div class="kpi-grid">
+    <div class="kpi c-cyan">
+      <div class="kpi-label">Total accounts</div>
+      <div class="kpi-value" id="k-accounts">—</div>
+      <div class="kpi-sub">across all balance tiers</div>
+    </div>
+    <div class="kpi c-green">
+      <div class="kpi-label">Total customers</div>
+      <div class="kpi-value" id="k-customers">—</div>
+      <div class="kpi-sub">globally registered</div>
+    </div>
+    <div class="kpi c-amber">
+      <div class="kpi-label">Total transactions</div>
+      <div class="kpi-value" id="k-txns">—</div>
+      <div class="kpi-sub">all time · all types</div>
+    </div>
+    <div class="kpi c-purple">
+      <div class="kpi-label">Today's volume</div>
+      <div class="kpi-value" id="k-today">—</div>
+      <div class="kpi-sub" id="k-change">vs yesterday</div>
+    </div>
+    <div class="kpi c-pink">
+      <div class="kpi-label">Top market</div>
+      <div class="kpi-value" id="k-country" style="font-size:22px;line-height:1.2;margin-top:4px">—</div>
+      <div class="kpi-sub" id="k-country-count">customers</div>
+    </div>
+    <div class="kpi c-red">
+      <div class="kpi-label">High-value txns</div>
+      <div class="kpi-value" id="k-highval">—</div>
+      <div class="kpi-sub">over $1,000 (poker tier)</div>
+    </div>
+  </div>
+
+  <!-- ROW 1: Daily volume + Transaction types -->
+  <section-label>Transaction volume · 30-day trend</section-label>
+  <div class="chart-grid-full">
+    <div class="card">
+      <div class="card-title">Daily transaction count</div>
+      <div class="card-subtitle">from AGG_TRANS_COUNT · grouped by transaction_date</div>
+      <div class="chart-wrap" style="height:220px">
+        <canvas id="chart-volume"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- ROW 2: Types + Amount buckets + Channel -->
+  <section-label>Transaction breakdown</section-label>
+  <div class="chart-grid-3">
+    <div class="card">
+      <div class="card-title">By transaction type</div>
+      <div class="card-subtitle">from AGG_TRANS_TYPE</div>
+      <div class="chart-wrap" style="height:220px">
+        <canvas id="chart-type"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">By amount tier</div>
+      <div class="card-subtitle">from AGG_TRANS_AMOUNT · rainbet / grocers / poker</div>
+      <div class="chart-wrap" style="height:220px">
+        <canvas id="chart-amount"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Amount tier · volume bars</div>
+      <div class="card-subtitle">transaction count per spending category</div>
+      <div class="bar-rows" id="amount-bars" style="padding-top:8px"></div>
+    </div>
+  </div>
+
+  <!-- ROW 3: Accounts wealth + Customer map -->
+  <section-label>Accounts &amp; customers</section-label>
+  <div class="chart-grid-2">
+    <div class="card">
+      <div class="card-title">Account balance tiers</div>
+      <div class="card-subtitle">from AGG_ACCOUNTS · broke / BrokeByMonday / homeless</div>
+      <div class="wealth-grid" id="wealth-grid">
+        <div class="wealth-cell"><div class="wealth-name">loading…</div></div>
+      </div>
+      <div class="chart-wrap" style="height:180px; margin-top:20px">
+        <canvas id="chart-accounts"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Customers by country</div>
+      <div class="card-subtitle">from AGG_CUSTOMERS · top 10 markets</div>
+      <div class="bar-rows" id="customer-bars"></div>
+    </div>
+  </div>
+
+  <!-- ROW 4: Type breakdown bars + trend sparkline -->
+  <section-label>Deep dive · transaction types</section-label>
+  <div class="chart-grid-2">
+    <div class="card">
+      <div class="card-title">Type distribution · ranked</div>
+      <div class="card-subtitle">% share of all transactions</div>
+      <div class="bar-rows" id="type-bars" style="padding-top:4px"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">30-day rolling average</div>
+      <div class="card-subtitle">smoothed trend line over daily volume</div>
+      <div class="chart-wrap" style="height:240px">
+        <canvas id="chart-trend"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- ROW 5: Country table -->
+  <section-label>Geographic distribution · full table</section-label>
+  <div class="card">
+    <div class="card-title">All markets</div>
+    <div class="card-subtitle">from AGG_CUSTOMERS · ordered by customer count</div>
+    <table class="country-table" id="country-table">
+      <tbody></tbody>
+    </table>
+  </div>
+
+</main>
+
+<footer>BANKING_DB · dbt aggregation layer · PUBLIC_GOLD schema · auto-refresh 30s</footer>
+
+<script>
+const BASE = '';
+const REFRESH_MS = 30000;
+
+const COLORS = {
+  cyan:   '#00e5ff',
+  green:  '#39ff8f',
+  amber:  '#ffc233',
+  red:    '#ff4757',
+  purple: '#b06eff',
+  pink:   '#ff6eb4',
+  muted:  '#3a4255',
+};
+
+const TYPE_COLORS  = [COLORS.cyan, COLORS.purple, COLORS.amber, COLORS.green, COLORS.pink, COLORS.red];
+const AMOUNT_COLORS= [COLORS.green, COLORS.amber, COLORS.red];
+const ACC_COLORS   = [COLORS.red, COLORS.amber, COLORS.green];
+
+Chart.defaults.color = '#5a6478';
+Chart.defaults.font.family = "'IBM Plex Mono', monospace";
+Chart.defaults.font.size   = 11;
+
+const GRID = { color: 'rgba(255,255,255,0.04)' };
+
+function fmt(n) {
+  if (n === undefined || n === null) return '—';
+  if (n >= 1e6) return (n/1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1) + 'K';
+  return Math.round(n).toLocaleString();
+}
+
+function pctBar(label, value, max, color, sub) {
+  const pct = Math.round(value / max * 100);
+  return `
+    <div>
+      <div class="bar-row-label">
+        <span>${label}</span>
+        <span>${fmt(value)}${sub ? ' · ' + sub : ''}</span>
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill" style="width:${pct}%;background:${color}"></div>
+      </div>
+    </div>`;
+}
+
+// ── Chart instances
+let charts = {};
+
+function makeChart(id, cfg) {
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(document.getElementById(id), cfg);
+  return charts[id];
+}
+
+// ── Render summary KPIs
+async function loadSummary() {
+  const d = await fetch(BASE + '/api/summary').then(r => r.json());
+  document.getElementById('k-accounts').textContent  = fmt(d.total_accounts);
+  document.getElementById('k-customers').textContent = fmt(d.total_customers);
+  document.getElementById('k-txns').textContent      = fmt(d.total_transactions);
+  document.getElementById('k-today').textContent     = fmt(d.today_transactions);
+  const chg = d.txn_change_pct;
+  const chgEl = document.getElementById('k-change');
+  chgEl.innerHTML = `<span class="${chg >= 0 ? 'up' : 'down'}">${chg >= 0 ? '▲' : '▼'} ${Math.abs(chg)}%</span> vs yesterday`;
+  document.getElementById('k-country').textContent      = d.top_country;
+  document.getElementById('k-country-count').textContent= fmt(d.top_country_count) + ' customers';
+  document.getElementById('k-highval').textContent      = d.high_value_txn_pct + '%';
+  document.getElementById('last-refresh').textContent   = new Date().toISOString().slice(11,19) + ' UTC';
+  document.getElementById('source-badge').textContent   = d.data_source;
+}
+
+// ── Daily volume chart
+async function loadVolume() {
+  const rows = await fetch(BASE + '/api/trans_count').then(r => r.json());
+  const labels = rows.map(r => r.transaction_date.slice(5));
+  const data   = rows.map(r => r.no_of_transactions);
+
+  makeChart('chart-volume', {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Transactions',
+        data,
+        backgroundColor: 'rgba(0,229,255,0.18)',
+        borderColor: COLORS.cyan,
+        borderWidth: 1,
+        borderRadius: 2,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: {
+        label: ctx => ' ' + ctx.parsed.y.toLocaleString() + ' txns'
+      }}},
+      scales: {
+        x: { grid: GRID, ticks: { maxTicksLimit: 10 } },
+        y: { grid: GRID, ticks: { callback: v => fmt(v) } }
+      }
+    }
+  });
+
+  // Rolling average
+  const window = 7;
+  const avg = data.map((_, i) => {
+    if (i < window - 1) return null;
+    const slice = data.slice(i - window + 1, i + 1);
+    return Math.round(slice.reduce((a,b) => a+b, 0) / window);
+  });
+  makeChart('chart-trend', {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Daily volume',
+          data,
+          borderColor: 'rgba(0,229,255,0.3)',
+          borderWidth: 1,
+          pointRadius: 0,
+          fill: false,
+        },
+        {
+          label: '7-day avg',
+          data: avg,
+          borderColor: COLORS.amber,
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+          tension: 0.4,
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { boxWidth: 10, padding: 16 } } },
+      scales: {
+        x: { grid: GRID, ticks: { maxTicksLimit: 8 } },
+        y: { grid: GRID, ticks: { callback: v => fmt(v) } }
+      }
+    }
+  });
+}
+
+// ── Transaction type doughnut + bars
+async function loadTypes() {
+  const d    = await fetch(BASE + '/api/trans_type').then(r => r.json());
+  const rows = d.rows;
+  const labels = rows.map(r => r.transaction_type);
+  const data   = rows.map(r => r.no_of_transactions);
+  const max    = Math.max(...data);
+
+  makeChart('chart-type', {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{ data, backgroundColor: TYPE_COLORS, borderWidth: 0, hoverOffset: 6 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      cutout: '65%',
+      plugins: {
+        legend: { position: 'right', labels: { boxWidth: 10, padding: 12, font: { size: 11 } } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed.toLocaleString()}` } }
+      }
+    }
+  });
+
+  const barsEl = document.getElementById('type-bars');
+  barsEl.innerHTML = rows.map((r, i) =>
+    pctBar(r.transaction_type, r.no_of_transactions, max, TYPE_COLORS[i], r.pct + '%')
+  ).join('');
+}
+
+// ── Amount tier doughnut + bars
+async function loadAmount() {
+  const d    = await fetch(BASE + '/api/trans_amount').then(r => r.json());
+  const rows = d.rows;
+  const labels= rows.map(r => r.category);
+  const data  = rows.map(r => r.no_of_transactions);
+  const max   = Math.max(...data);
+
+  makeChart('chart-amount', {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{ data, backgroundColor: AMOUNT_COLORS, borderWidth: 0, hoverOffset: 6 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      cutout: '65%',
+      plugins: {
+        legend: { position: 'right', labels: { boxWidth: 10, padding: 12 } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed.toLocaleString()}` } }
+      }
+    }
+  });
+
+  const barsEl = document.getElementById('amount-bars');
+  const labels2 = { rainbet: '$0 – $200', grocers: '$200 – $1K', poker: '$1K+' };
+  barsEl.innerHTML = rows.map((r, i) =>
+    pctBar(labels2[r.category] || r.category, r.no_of_transactions, max, AMOUNT_COLORS[i], r.pct + '%')
+  ).join('');
+}
+
+// ── Accounts wealth cards + bar chart
+async function loadAccounts() {
+  const d    = await fetch(BASE + '/api/accounts').then(r => r.json());
+  const rows = d.rows;
+  const tier_labels = { broke: 'Broke', BrokeByMonday: 'Broke by Monday', homeless: 'Homeless' };
+  const tier_colors = { broke: COLORS.red, BrokeByMonday: COLORS.amber, homeless: COLORS.green };
+
+  document.getElementById('wealth-grid').innerHTML = rows.map((r, i) => `
+    <div class="wealth-cell">
+      <div class="wealth-name">${tier_labels[r.poorness] || r.poorness}</div>
+      <div class="wealth-count" style="color:${tier_colors[r.poorness] || TYPE_COLORS[i]}">${fmt(r.no_of_accounts)}</div>
+      <div class="wealth-pct">${r.pct}% of accounts</div>
+    </div>
+  `).join('');
+
+  makeChart('chart-accounts', {
+    type: 'bar',
+    data: {
+      labels: rows.map(r => tier_labels[r.poorness] || r.poorness),
+      datasets: [{
+        data: rows.map(r => r.no_of_accounts),
+        backgroundColor: rows.map(r => tier_colors[r.poorness] + '33'),
+        borderColor:     rows.map(r => tier_colors[r.poorness]),
+        borderWidth: 1,
+        borderRadius: 3,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false } },
+        y: { grid: GRID, ticks: { callback: v => fmt(v) } }
+      }
+    }
+  });
+}
+
+// ── Customers by country bars + full table
+async function loadCustomers() {
+  const rows = await fetch(BASE + '/api/customers').then(r => r.json());
+  const top10 = rows.slice(0, 10);
+  const max   = top10[0].no_of_customers;
+
+  const barColors = [COLORS.cyan, COLORS.purple, COLORS.green, COLORS.amber,
+                     COLORS.pink, COLORS.red, COLORS.cyan, COLORS.purple, COLORS.green, COLORS.amber];
+
+  document.getElementById('customer-bars').innerHTML = top10.map((r, i) =>
+    pctBar(r.country, r.no_of_customers, max, barColors[i])
+  ).join('');
+
+  const tbody = document.querySelector('#country-table tbody');
+  tbody.innerHTML = rows.map((r, i) => `
+    <tr>
+      <td><span class="rank">#${i+1}</span> ${r.country}</td>
+      <td>${r.no_of_customers.toLocaleString()}</td>
+    </tr>
+  `).join('');
+}
+
+// ── Full refresh
+async function refresh() {
+  await Promise.all([
+    loadSummary(),
+    loadVolume(),
+    loadTypes(),
+    loadAmount(),
+    loadAccounts(),
+    loadCustomers(),
+  ]);
+}
+
+refresh();
+setInterval(refresh, REFRESH_MS);
+</script>
+</body>
+</html>
