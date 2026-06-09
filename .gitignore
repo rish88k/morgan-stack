@@ -11,3 +11,5 @@
 *.log
 
 profiles.yml
+
+venv/
